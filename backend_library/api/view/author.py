@@ -1,9 +1,7 @@
 from math import ceil
 
 from api.models import Author
-from api.serializers import (
-    AuthorSerializer,
-)
+from api.serializers.se_author import AuthorSerializer, UserAuthorSerializer
 from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -21,7 +19,7 @@ class AuthorView(APIView):
         if request.user.role in ["admin", "libby"]:
             name = request.GET.get("name")
             page = int(request.GET.get("page", 1))
-            limit = int(request.GET.get("page", 10))
+            limit = int(request.GET.get("limit", 10))
 
             authors = Author.objects.all()
 
@@ -48,10 +46,32 @@ class AuthorView(APIView):
                 status=status.HTTP_200_OK,
             )
         else:
-            data = {
-                "name": request.author.name,
-            }
-            return Response(data, status)
+            name = request.GET.get("name")
+            page = int(request.GET.get("page", 1))
+            limit = int(request.GET.get("limit", 10))
+            authors = Author.objects.all()
+
+            if name:
+                authors = authors.filter(name__icontains=name)
+
+            total = authors.count()
+            total_pages = ceil(total / limit)
+
+            start = (page - 1) * limit
+            end = start + limit
+
+            serializer = UserAuthorSerializer(authors[start:end], many=True)
+
+            return Response(
+                {
+                    "data": serializer.data,
+                    "page": page,
+                    "page_size": limit,
+                    "total": total,
+                    "total_pages": total_pages,
+                },
+                status=status.HTTP_200_OK,
+            )
 
     def post(self, request):
         if request.user.role not in ["admin", "libby"]:

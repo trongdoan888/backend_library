@@ -1,7 +1,7 @@
 from math import ceil
 
 from api.models import User
-from api.serializers import (
+from api.serializers.se_account import (
     UserSerializer,
 )
 from django.db import IntegrityError

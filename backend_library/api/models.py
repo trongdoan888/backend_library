@@ -88,8 +88,17 @@ class Author(models.Model):
 class Book(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, default="Unknown", blank=True)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, null = True, default=None)
-    author = models.ForeignKey(Author, on_delete=models.CASCADE, null = True, default=None)
+    authors = models.ManyToManyField(
+        Author,
+        related_name="books",
+        blank=True,
+    )
+
+    categories = models.ManyToManyField(
+        Category,
+        related_name="books",
+        blank=True,
+    )
     total = models.IntegerField(default=0)
     total_borrowed = models.IntegerField(default=0)
     total_error = models.IntegerField(default=0)
@@ -98,12 +107,21 @@ class Book(models.Model):
     def __str__(self):
         return self.id
 
-
+# Mượn sách 
 class Borrow(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, default="")
-    book = models.ForeignKey(Book, on_delete=models.CASCADE, default="")
-    borrow_date = models.DateField()
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE
+    )
+
+    borrow_date = models.DateField(auto_now_add=True)
+
     borrow_status = models.CharField(
         max_length=25,
         choices=[
@@ -113,16 +131,45 @@ class Borrow(models.Model):
         ],
         default="borrowed",
     )
+
     due_date = models.DateField()
 
+    payment_date = models.DateField(
+        null=True,
+        blank=True
+    )
+
+    fine_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0
+    )
+
     def __str__(self):
-        return self.id
+        return str(self.id)
 
 
-class Fines(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    borrow = models.ForeignKey(Borrow, on_delete=models.CASCADE, default="")
-    fine_amount = models.DecimalField(max_digits=10, decimal_places=2)
+class BorrowBook(models.Model):
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    borrow = models.ForeignKey(
+        Borrow,
+        on_delete=models.CASCADE,
+        related_name="borrow_books"
+    )
+
+    book = models.ForeignKey(
+        Book,
+        on_delete=models.CASCADE
+    )
+
+    book_quantity = models.IntegerField(
+        default=1
+    )
 
     def __str__(self):
-        return self.id
+        return str(self.id)

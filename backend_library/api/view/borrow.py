@@ -1,45 +1,51 @@
-from datetime import timezone
 from math import ceil
 
-from api.models import Book, Borrow, User
-from api.serializers import (
+from api.models import Borrow, BorrowBook
+from api.serializers.se_borrow import (
     BorrowSerializer,
+    BorrowWriteSerializer,
 )
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-# ===========================QUẢN LÝ MƯỢN TRẢ ================================
 
+# =========================== QUẢN LÝ MƯỢN TRẢ ================================
 
 class BorrowView(APIView):
     authentication_classes = (JWTAuthentication,)
     permission_classes = (IsAuthenticated,)
 
-    # 1. GET: Lấy danh sách mượn trả
+    # =========================== GET ===========================
+
     def get(self, request):
-        name = request.GET.get("name")
+        id = request.GET.get("id")
         page = int(request.GET.get("page", 1))
-        limit = int(request.GET.get("page", 10))
+        limit = int(request.GET.get("limit", 10))
 
-        borrrows = Borrow.objects.all()
+        borrows = Borrow.objects.all()
 
-        # Phân trang
-        if name:
-            borrrows = borrrows.filter(name__icontains=name)
+        if id:
+            borrows = borrows.filter(id__icontains=id)
 
         if request.user.role not in ["admin", "libby"]:
-            borrrows = borrrows.filter(user=request.user)
+            borrows = borrows.filter(user=request.user)
 
-        total = borrrows.count()
+        total = borrows.count()
         total_pages = ceil(total / limit)
 
         start = (page - 1) * limit
         end = start + limit
 
-        serializer = BorrowSerializer(borrrows[start:end], many=True)
+        serializer = BorrowSerializer(
+            borrows[start:end],
+            many=True
+        )
 
         return Response(
             {
@@ -52,128 +58,280 @@ class BorrowView(APIView):
             status=status.HTTP_200_OK,
         )
 
-    # 2. POST: Mượn sách
+    # =========================== POST ===========================
+
     def post(self, request):
-        book_id = request.data.get("book")
-        user_id = (
-            request.data.get("user")
-            if request.user.role in ["admin", "libby"]
-            else request.user.user
-        )
-
-        try:
-            user_obj = User.objects.get(user=user_id)
-            book_obj = Book.objects.get(book_id=book_id)
-        except (User.DoesNotExist, Book.DoesNotExist):
-            return Response(
-                {"error": "Người dùng hoặc Sách không tồn tại."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        available_books = book_obj.total - (
-            book_obj.total_borrowed + book_obj.total_error
-        )
-        if available_books <= 0:
-            return Response(
-                {"error": f"Sách '{book_obj.book_name}' đã hết trong kho!"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        id = request.data.get("id")
-        borrow_date = request.data.get("borrow_date", timezone.now().date())
-        due_date = request.data.get("due_date")
-
-        if not id or not due_date:
-            return Response(
-                {"error": "Vui lòng nhập borrow_id và due_date."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        new_borrow = Borrow.objects.create(
-            user=user_obj,
-            book=book_obj,
-            borrow_date=borrow_date,
-            due_date=due_date,
-            borrow_status="borrowed",
-        )
-
-        book_obj.total_borrowed += 1
-        book_obj.save()
-
-        serializer = BorrowSerializer(new_borrow)
-        return Response(
-            {"message": "Mượn sách thành công!", "borrow": serializer.data},
-            status=status.HTTP_201_CREATED,
-        )
-
-    # 3. PUT: Trả sách / Cập nhật trạng thái
-    def put(self, request):
-        if request.user.role in ["admin", "libby"]:
-            id = request.data.get("id")
-            new_status = request.data.get("borrow_status")
-
-            try:
-                borrow_obj = Borrow.objects.get(id=id)
-            except Borrow.DoesNotExist:
-                return Response(
-                    {"error": "Phiếu mượn không tồn tại."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-
-            if borrow_obj.borrow_status != "returned" and new_status == "returned":
-                book_obj = borrow_obj.book
-                if book_obj.total_borrowed > 0:
-                    book_obj.total_borrowed -= 1
-                    book_obj.save()
-
-            borrow_obj.borrow_status = new_status
-            borrow_obj.save()
-
-            serializer = BorrowSerializer(borrow_obj)
+        # Chỉ admin và libby được mượn sách
+        if request.user.role not in ["admin", "libby"]:
             return Response(
                 {
-                    "message": "Cập nhật trạng thái thành công.",
-                    "borrow": serializer.data,
+                    "message": "Bạn không có quyền mượn sách."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = BorrowWriteSerializer(
+            data=request.data
+        )
+
+        if not serializer.is_valid():
+            return Response(
+                {
+                    "message": "Dữ liệu không hợp lệ.",
+                    "errors": serializer.errors,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            with transaction.atomic():
+
+                # Lấy danh sách sách cần mượn
+                books_data = serializer.validated_data["books"]
+
+                # ==================================================
+                # KIỂM TRA SỐ LƯỢNG SÁCH
+                # ==================================================
+
+                for item in books_data:
+                    book = item["book"]
+                    quantity = item["book_quantity"]
+
+                    remaining = (
+                        book.total
+                        - book.total_borrowed
+                        - book.total_error
+                    )
+
+                    if remaining < quantity:
+                        return Response(
+                            {
+                                "message": (
+                                    f"Sách '{book.name}' "
+                                    f"không đủ số lượng để mượn."
+                                ),
+                                "book_id": str(book.id),
+                                "requested_quantity": quantity,
+                                "remaining_quantity": remaining,
+                            },
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
+                # ==================================================
+                # TẠO PHIẾU MƯỢN
+                # ==================================================
+
+                borrow = serializer.save()
+
+                # ==================================================
+                # CẬP NHẬT total_borrowed
+                # ==================================================
+
+                borrow_books = BorrowBook.objects.filter(
+                    borrow=borrow
+                ).select_related("book")
+
+                for borrow_book in borrow_books:
+                    book = borrow_book.book
+                    quantity = borrow_book.book_quantity
+
+                    book.total_borrowed += quantity
+                    book.save()
+
+            # Serializer trả về dữ liệu đầy đủ
+            response_serializer = BorrowSerializer(
+                borrow
+            )
+
+            return Response(
+                {
+                    "message": "Mượn sách thành công.",
+                    "data": response_serializer.data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        except Exception as e:  # noqa: BLE001
+            return Response(
+                {
+                    "message": "Mượn sách thất bại.",
+                    "error": str(e),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    # =========================== PUT ===========================
+
+    def put(self, request):
+        # Chỉ admin và libby được trả sách
+        if request.user.role not in ["admin", "libby"]:
+            return Response(
+                {
+                    "message": "Bạn không có quyền trả sách."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        FINE_PER_DAY = 10000
+
+        borrow_id = request.data.get("id")
+
+        if not borrow_id:
+            return Response(
+                {
+                    "message": "Vui lòng cung cấp id phiếu mượn."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        borrow = get_object_or_404(
+            Borrow,
+            id=borrow_id
+        )
+
+        # ==================================================
+        # KIỂM TRA ĐÃ TRẢ SÁCH CHƯA
+        # ==================================================
+
+        if borrow.payment_date is not None:
+            return Response(
+                {
+                    "message": (
+                        "Phiếu mượn đã được trả trước đó."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        today = timezone.now().date()
+
+        try:
+            with transaction.atomic():
+
+                # ==================================================
+                # LẤY CÁC SÁCH TRONG PHIẾU MƯỢN
+                # ==================================================
+
+                borrow_books = BorrowBook.objects.filter(
+                    borrow=borrow
+                ).select_related("book")
+
+                # ==================================================
+                # KIỂM TRA total_borrowed
+                # ==================================================
+
+                for borrow_book in borrow_books:
+                    book = borrow_book.book
+                    quantity = borrow_book.book_quantity
+
+                    if book.total_borrowed < quantity:
+                        return Response(
+                            {
+                                "message": (
+                                    f"Số lượng sách "
+                                    f"'{book.name}' "
+                                    f"không hợp lệ."
+                                ),
+                                "book_id": str(book.id),
+                                "currently_borrowed": (
+                                    book.total_borrowed
+                                ),
+                                "return_quantity": quantity,
+                            },
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
+                # ==================================================
+                # KIỂM TRA QUÁ HẠN
+                # ==================================================
+
+                if today > borrow.due_date:
+                    overdue_days = (
+                        today - borrow.due_date
+                    ).days
+
+                    borrow.borrow_status = "overdue"
+
+                    borrow.fine_amount = (
+                        overdue_days * FINE_PER_DAY
+                    )
+
+                else:
+                    borrow.borrow_status = "returned"
+                    borrow.fine_amount = 0
+
+                # ==================================================
+                # PAYMENT DATE
+                # ==================================================
+
+                borrow.payment_date = today
+
+                # ==================================================
+                # CẬP NHẬT total_borrowed
+                # ==================================================
+
+                for borrow_book in borrow_books:
+                    book = borrow_book.book
+                    quantity = borrow_book.book_quantity
+
+                    book.total_borrowed -= quantity
+                    book.save()
+
+                # Lưu phiếu mượn
+                borrow.save()
+
+            serializer = BorrowSerializer(borrow)
+
+            return Response(
+                {
+                    "message": "Trả sách thành công.",
+                    "data": serializer.data,
                 },
                 status=status.HTTP_200_OK,
             )
-        else:
+
+        except Exception as e:  # noqa: BLE001
             return Response(
-                {"error": "Không đủ quyền!"}, status=status.HTTP_403_FORBIDDEN
+                {
+                    "message": "Trả sách thất bại.",
+                    "error": str(e),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-    # 4. DELETE: Xóa phiếu mượn
+    # =========================== DELETE ===========================
+
     def delete(self, request):
-        if request.user.role in ["admin", "libby"]:
-            id = request.data.get("id")
-
-            if not id:
-                return Response(
-                    {"error": "Vui lòng cung cấp borrow_id."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            try:
-                borrow_obj = Borrow.objects.get(id=id)
-
-                if borrow_obj.borrow_status == "borrowed":
-                    book_obj = borrow_obj.book
-                    if book_obj.total_borrowed > 0:
-                        book_obj.total_borrowed -= 1
-                        book_obj.save()
-
-                borrow_obj.delete()
-                return Response(
-                    {"message": "Đã xóa phiếu mượn thành công."},
-                    status=status.HTTP_200_OK,
-                )
-
-            except Borrow.DoesNotExist:
-                return Response(
-                    {"error": "Phiếu mượn không tồn tại."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-        else:
+        if request.user.role not in ["admin", "libby"]:
             return Response(
-                {"error": "Không đủ quyền!"}, status=status.HTTP_403_FORBIDDEN
+                {
+                    "error": (
+                        "Bạn không có quyền xóa "
+                        "thông tin mượn sách"
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        id = request.data.get("id")
+
+        try:
+            borrow = Borrow.objects.get(id=id)
+            borrow.delete()
+
+            return Response(
+                {
+                    "message": (
+                        "Đã xóa phiếu mượn thành công!"
+                    )
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Borrow.DoesNotExist:
+            return Response(
+                {
+                    "error": "Phiếu mượn không tồn tại!"
+                },
+                status=status.HTTP_404_NOT_FOUND,
             )

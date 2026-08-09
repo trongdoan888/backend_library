@@ -1,5 +1,5 @@
 
-from api.serializers import (
+from api.serializers.se_register import (
     RegisterSerializer,
 )
 from rest_framework import status

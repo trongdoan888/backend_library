@@ -1,7 +1,7 @@
 from math import ceil
 
 from api.models import Category
-from api.serializers import (
+from api.serializers.se_category import (
     CategorySerializer,
 )
 from django.db import IntegrityError
@@ -21,7 +21,7 @@ class CategoryView(APIView):
         if request.user.role in ["admin", "libby"]:
             name = request.GET.get("name")
             page = int(request.GET.get("page", 1))
-            limit = int(request.GET.get("page", 10))
+            limit = int(request.GET.get("limit", 10))
 
             categories = Category.objects.all()
 
@@ -52,9 +52,12 @@ class CategoryView(APIView):
             page = int(request.GET.get("page", 1))
             limit = int(request.GET.get("page", 10))
 
-            data = {
-                "name": request.category.name,
-            }
+            data = [
+                {
+                    "name": category.name,
+                }
+                for category in categories
+            ]
 
             if name:
                 data = data.filter(name__icontains=name)
