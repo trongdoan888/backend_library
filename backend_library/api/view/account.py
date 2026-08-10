@@ -35,6 +35,10 @@ class UserView(APIView):
 
             users = User.objects.all()
 
+            # Libby chỉ được xem các tài khoản vai trò user
+            if request.user.role == "libby":
+                users = users.filter(role="user")
+
             # Phân trang
             if name:
                 users = users.filter(name__icontains=name)
@@ -111,6 +115,12 @@ class UserView(APIView):
                 {"error": "Bạn không đủ quyền!"}, status=status.HTTP_403_FORBIDDEN
             )
 
+        if "role" in request.data and request.user.role != "admin":
+            return Response(
+                {"error": "Chỉ Admin mới có quyền sửa vai trò người dùng!"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         id = request.data.get("id")
         try:
             user = User.objects.get(id=id)
@@ -132,23 +142,30 @@ class UserView(APIView):
 
     # --- 4. XÓA TÀI KHOẢN ---
     def delete(self, request):
-        if request.user.role == "admin":
-            id = request.data.get("id")
-
-            try:
-                user = User.objects.get(id=id)
-                user.delete()
-                return Response(
-                    {"message": "Đã xóa tài khoản thành công."},
-                    status=status.HTTP_200_OK,
-                )
-            except User.DoesNotExist:
-                return Response(
-                    {"error": "Tài khoản không tồn tại."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-        else:
+        if request.user.role not in ["admin", "libby"]:
             return Response(
-                {"error": "Chỉ Admin mới có quyền xóa tài khoản!"},
+                {"error": "Chỉ Admin hoặc Libby mới có quyền xóa tài khoản!"},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        id = request.data.get("id")
+
+        try:
+            user = User.objects.get(id=id)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Tài khoản không tồn tại."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if request.user.role == "libby" and user.role == "admin":
+            return Response(
+                {"error": "Libby không có quyền xóa tài khoản Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        user.delete()
+        return Response(
+            {"message": "Đã xóa tài khoản thành công."},
+            status=status.HTTP_200_OK,
+        )

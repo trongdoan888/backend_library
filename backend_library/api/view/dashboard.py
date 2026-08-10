@@ -1,4 +1,5 @@
 from api.models import Book, Borrow, User
+from django.db.models import Sum
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -21,13 +22,16 @@ class DashboardView(APIView):
 
         try:
             total_books = Book.objects.count()
+            total_book_quantity = Book.objects.aggregate(total=Sum("total"))["total"] or 0
             total_users = User.objects.count()
-            total_borrowed = Borrow.objects.filter(borrow_status="borrowed").count()
+            # Số lượng sách (bản) đang được mượn, không phải số phiếu mượn
+            total_borrowed = Book.objects.aggregate(total=Sum("total_borrowed"))["total"] or 0
             total_overdue = Borrow.objects.filter(borrow_status="overdue").count()
 
             return Response(
                 {
                     "total_books": total_books,
+                    "total_book_quantity": total_book_quantity,
                     "total_users": total_users,
                     "total_borrowed": total_borrowed,
                     "total_overdue": total_overdue,

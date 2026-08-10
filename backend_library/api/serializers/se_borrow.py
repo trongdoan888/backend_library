@@ -39,11 +39,6 @@ class BorrowSerializer(serializers.ModelSerializer):
             'due_date': {'required': False, 'allow_null': True},
             'borrow_status': {'required': False},
         }
-        def update(self, instance, validated_data):
-            for attr, value in validated_data.items():
-                setattr(instance, attr, value)
-            instance.save()
-            return instance
 
 # --- GHI DỮ LIỆU ---
 class BorrowBookWriteSerializer(serializers.Serializer):

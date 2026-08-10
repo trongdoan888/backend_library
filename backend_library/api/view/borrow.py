@@ -7,7 +7,6 @@ from api.serializers.se_borrow import (
 )
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -163,16 +162,14 @@ class BorrowView(APIView):
     # =========================== PUT ===========================
 
     def put(self, request):
-        # Chỉ admin và libby được trả sách
+        # Chỉ admin và libby được chỉnh sửa phiếu mượn
         if request.user.role not in ["admin", "libby"]:
             return Response(
                 {
-                    "message": "Bạn không có quyền trả sách."
+                    "message": "Bạn không có quyền chỉnh sửa phiếu mượn."
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
-
-        FINE_PER_DAY = 10000
 
         borrow_id = request.data.get("id")
 
@@ -189,115 +186,30 @@ class BorrowView(APIView):
             id=borrow_id
         )
 
-        # ==================================================
-        # KIỂM TRA ĐÃ TRẢ SÁCH CHƯA
-        # ==================================================
+        serializer = BorrowSerializer(
+            borrow,
+            data=request.data,
+            partial=True,
+        )
 
-        if borrow.payment_date is not None:
+        if not serializer.is_valid():
             return Response(
                 {
-                    "message": (
-                        "Phiếu mượn đã được trả trước đó."
-                    )
+                    "message": "Dữ liệu không hợp lệ.",
+                    "errors": serializer.errors,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        today = timezone.now().date()
+        serializer.save()
 
-        try:
-            with transaction.atomic():
-
-                # ==================================================
-                # LẤY CÁC SÁCH TRONG PHIẾU MƯỢN
-                # ==================================================
-
-                borrow_books = BorrowBook.objects.filter(
-                    borrow=borrow
-                ).select_related("book")
-
-                # ==================================================
-                # KIỂM TRA total_borrowed
-                # ==================================================
-
-                for borrow_book in borrow_books:
-                    book = borrow_book.book
-                    quantity = borrow_book.book_quantity
-
-                    if book.total_borrowed < quantity:
-                        return Response(
-                            {
-                                "message": (
-                                    f"Số lượng sách "
-                                    f"'{book.name}' "
-                                    f"không hợp lệ."
-                                ),
-                                "book_id": str(book.id),
-                                "currently_borrowed": (
-                                    book.total_borrowed
-                                ),
-                                "return_quantity": quantity,
-                            },
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
-
-                # ==================================================
-                # KIỂM TRA QUÁ HẠN
-                # ==================================================
-
-                if today > borrow.due_date:
-                    overdue_days = (
-                        today - borrow.due_date
-                    ).days
-
-                    borrow.borrow_status = "overdue"
-
-                    borrow.fine_amount = (
-                        overdue_days * FINE_PER_DAY
-                    )
-
-                else:
-                    borrow.borrow_status = "returned"
-                    borrow.fine_amount = 0
-
-                # ==================================================
-                # PAYMENT DATE
-                # ==================================================
-
-                borrow.payment_date = today
-
-                # ==================================================
-                # CẬP NHẬT total_borrowed
-                # ==================================================
-
-                for borrow_book in borrow_books:
-                    book = borrow_book.book
-                    quantity = borrow_book.book_quantity
-
-                    book.total_borrowed -= quantity
-                    book.save()
-
-                # Lưu phiếu mượn
-                borrow.save()
-
-            serializer = BorrowSerializer(borrow)
-
-            return Response(
-                {
-                    "message": "Trả sách thành công.",
-                    "data": serializer.data,
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        except Exception as e:  # noqa: BLE001
-            return Response(
-                {
-                    "message": "Trả sách thất bại.",
-                    "error": str(e),
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        return Response(
+            {
+                "message": "Cập nhật phiếu mượn thành công.",
+                "data": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     # =========================== DELETE ===========================
 
