@@ -35,9 +35,12 @@ class BookSerializer(serializers.ModelSerializer):
             'remaining',
         ]  
         read_only_fields: ClassVar[tuple] = ('id', 'total_borrowed', 'total_error')
+        # Lưu ý: "categories"/"authors" KHÔNG đặt extra_kwargs ở đây vì 2
+        # field này đã được khai báo lại phía trên (nested, read_only=True)
+        # -> extra_kwargs cho chúng sẽ không có tác dụng gì (dead config).
+        # Serializer này chỉ dùng để ĐỌC dữ liệu (GET) và trả response;
+        # muốn ghi authors/categories phải dùng BookWriteSerializer.
         extra_kwargs: ClassVar[dict] = {
-            'categories': {'required': False, 'allow_null': True},
-            'authors': {'required': False, 'allow_null': True},
             'content': {'required': False, 'allow_blank': True},
             'total': {'required': False, 'default': 1},
         }

@@ -36,7 +36,10 @@ class BorrowSerializer(serializers.ModelSerializer):
         ]  
         read_only_fields: ClassVar[tuple] = ('id', 'borrow_date')
         extra_kwargs: ClassVar[dict] = {
-            'due_date': {'required': False, 'allow_null': True},
+            # Model Borrow.due_date không có null=True, nên KHÔNG được set
+            # allow_null=True ở đây - nếu không, PUT gửi due_date=null sẽ
+            # pass validate nhưng crash IntegrityError khi lưu xuống DB.
+            'due_date': {'required': False},
             'borrow_status': {'required': False},
         }
 
@@ -59,9 +62,15 @@ class BorrowWriteSerializer(serializers.ModelSerializer):
         model = Borrow
         fields = ["id","user","books","borrow_date","payment_date","due_date","borrow_status","fine_amount"]  # noqa: RUF012
 
-        read_only_fields = ["id","borrow_date","payment_date","fine_amount"]  # noqa: RUF012
+        # borrow_status phải read-only khi tạo phiếu mượn mới: mọi phiếu mượn
+        # mới đều phải bắt đầu ở trạng thái "borrowed" (default của model).
+        # Nếu không, client có thể tạo phiếu mượn với borrow_status="returned"
+        # ngay từ đầu, bỏ qua luồng nghiệp vụ mượn -> trả sách.
+        read_only_fields = ["id","borrow_date","payment_date","fine_amount","borrow_status"]  # noqa: RUF012
 
     def create(self, validated_data):
+        # books là dữ liệu lồng (nested) không thuộc field của model Borrow,
+        # phải tách ra trước khi tạo Borrow rồi mới tạo từng BorrowBook.
         books_data = validated_data.pop("books")
 
         borrow = Borrow.objects.create(

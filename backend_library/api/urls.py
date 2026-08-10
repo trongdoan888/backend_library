@@ -7,13 +7,13 @@ from api.view.book import BookView
 from api.view.borrow import BorrowView
 from api.view.category import CategoryView
 from api.view.dashboard import DashboardView
-from api.view.login import LoginCheck, RegisterView
+from api.view.login import LoginCheck
 
 urlpatterns = [
     path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_view"),
     path("api/token/refresh", TokenRefreshView.as_view(), name="token_refresh_view"),
     path("api/check_login/", LoginCheck.as_view(), name="check_login"),
-    path("api/register/", RegisterView.as_view(), name="api_register"),
+    # path("api/register/", RegisterView.as_view(), name="api_register"),
     path("api/account/", Account.as_view(), name="account"),
     path("api/user/", UserView.as_view(), name="user"),
     path("api/book/", BookView.as_view(), name="book"),

@@ -47,20 +47,23 @@ class CategoryView(APIView):
                 status=status.HTTP_200_OK,
             )
         else:
-
+            # Nhánh này trước đây bị lỗi hoàn toàn (luôn crash với user
+            # thường):
+            #   - dùng biến `categories` chưa được gán ở nhánh này
+            #     (chỉ tồn tại ở nhánh admin/libby phía trên) -> NameError.
+            #   - lấy limit từ key "page" thay vì "limit".
+            #   - gọi .filter()/.count() trên list dict thường (không phải
+            #     QuerySet) -> AttributeError.
+            # Category không có field nhạy cảm nào ngoài "name" nên chỉ cần
+            # dùng lại đúng logic phân trang như nhánh admin/libby.
             name = request.GET.get("name")
             page = int(request.GET.get("page", 1))
-            limit = int(request.GET.get("page", 10))
+            limit = int(request.GET.get("limit", 10))
 
-            data = [
-                {
-                    "name": category.name,
-                }
-                for category in categories
-            ]
+            categories = Category.objects.all()
 
             if name:
-                data = data.filter(name__icontains=name)
+                categories = categories.filter(name__icontains=name)
 
             total = categories.count()
             total_pages = ceil(total / limit)
@@ -68,11 +71,11 @@ class CategoryView(APIView):
             start = (page - 1) * limit
             end = start + limit
 
-            serializer = CategorySerializer(data[start:end], many=True)
+            serializer = CategorySerializer(categories[start:end], many=True)
 
             return Response(
                 {
-                    "data": data,
+                    "data": serializer.data,
                     "page": page,
                     "page_size": limit,
                     "total": total,
@@ -95,10 +98,13 @@ class CategoryView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if Category.objects.filter(name=request.data.get("name")).exists():
+                # Trước đây không set status -> mặc định trả 200 OK cho
+                # một lỗi, khiến client tưởng tạo loại sách thành công.
                 return Response(
                     {
                         "error": "Tên loại sách bị trùng!",
-                    }
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
             else:
                 try:
@@ -126,20 +132,28 @@ class CategoryView(APIView):
         id = request.data.get("id")
         try:
             category = Category.objects.get(id=id)
-            serializer = CategorySerializer(category, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(
-                    {
-                        "message": "Cập nhật loại sách thành công.",
-                        "category": serializer.data,
-                    },
-                    status=status.HTTP_200_OK,
-                )
         except Category.DoesNotExist:
             return Response(
                 {"error": "Loại sách không tồn tại."}, status=status.HTTP_404_NOT_FOUND
             )
+
+        serializer = CategorySerializer(category, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {
+                    "message": "Cập nhật loại sách thành công.",
+                    "category": serializer.data,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # Thiếu nhánh else trước đây: nếu serializer invalid, phải trả lỗi
+        # 400 thay vì để hàm không return gì.
+        return Response(
+            {"error": "Dữ liệu không hợp lệ.", "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     def delete(self, request):
         if request.user.role not in ["admin", "libby"]:

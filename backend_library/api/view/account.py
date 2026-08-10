@@ -124,21 +124,30 @@ class UserView(APIView):
         id = request.data.get("id")
         try:
             user = User.objects.get(id=id)
-            serializer = UserSerializer(user, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(
-                    {
-                        "message": "Cập nhật tài khoản thành công!",
-                        "user": serializer.data,
-                    },
-                    status=status.HTTP_200_OK,
-                )
         except User.DoesNotExist:
             return Response(
                 {"error": "Tài khoản không tồn tại."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {
+                    "message": "Cập nhật tài khoản thành công!",
+                    "user": serializer.data,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # Trường hợp trước đây bị thiếu: nếu serializer invalid, hàm phải
+        # trả về response lỗi. Nếu không, hàm "rơi" ra khỏi try mà không có
+        # return nào -> Django báo lỗi "view did not return an HttpResponse".
+        return Response(
+            {"error": "Dữ liệu không hợp lệ.", "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     # --- 4. XÓA TÀI KHOẢN ---
     def delete(self, request):

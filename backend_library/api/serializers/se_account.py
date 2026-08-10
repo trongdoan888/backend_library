@@ -25,6 +25,20 @@ class UserSerializer(serializers.ModelSerializer):
             'role': {'required': False},
         }
 
+    def create(self, validated_data):
+        # BẮT BUỘC override create(): ModelSerializer.create() mặc định gọi
+        # User.objects.create(**validated_data), tức lưu thẳng password ở
+        # dạng plain text (không hash). Phải dùng create_user() của
+        # CustomUserManager để password được hash bằng set_password().
+        password = validated_data.pop('password', None)
+        username = validated_data.pop('username')
+
+        return User.objects.create_user(
+            username=username,
+            password=password,
+            **validated_data
+        )
+
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)
 

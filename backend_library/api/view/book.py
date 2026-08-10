@@ -88,10 +88,13 @@ class BookView(APIView):
     # --- 3. CẬP NHẬT SÁCH ---
     def put(self, request):
         if request.user.role not in ["admin", "libby"]:
+            # Trước đây trả status.HTTP_200_OK cho lỗi từ chối quyền, khiến
+            # client tưởng request thành công. Phải trả 403 giống các
+            # view khác (book POST/DELETE, borrow, author, category...).
             return Response({
                 "error": "Không đủ quyền truy cập!"
-            }, status = status.HTTP_200_OK,)
-        
+            }, status = status.HTTP_403_FORBIDDEN,)
+
         id = request.data.get("id")
 
         try:
@@ -107,7 +110,13 @@ class BookView(APIView):
                 "error": "Tên sách đã tồn tại!"
             }, status = status.HTTP_400_BAD_REQUEST,)
 
-        serializer = BookSerializer(book, data=request.data, partial=True)
+        # Dùng BookWriteSerializer (không phải BookSerializer) để cập nhật:
+        # BookSerializer khai báo "authors"/"categories" là nested
+        # read_only=True nên không bao giờ ghi được giá trị mới cho 2 field
+        # này. BookWriteSerializer dùng PrimaryKeyRelatedField ghi được,
+        # và update() mặc định của ModelSerializer tự xử lý đúng set() cho
+        # quan hệ ManyToMany.
+        serializer = BookWriteSerializer(book, data=request.data, partial=True)
         if not serializer.is_valid():
             return Response({
                 "error": serializer.errors,
@@ -117,7 +126,10 @@ class BookView(APIView):
 
         return Response({
             "message": "Cập nhật sách thành công!",
-            "book": serializer.data,
+            # Trả về bằng BookSerializer để response có dữ liệu đầy đủ
+            # (tên tác giả/thể loại lồng nhau, remaining...) thay vì chỉ
+            # id của authors/categories như BookWriteSerializer.
+            "book": BookSerializer(book).data,
         }, status = status.HTTP_200_OK,)
     # --- 4. XÓA SÁCH ---
     def delete(self, request):

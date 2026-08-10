@@ -87,9 +87,11 @@ class AuthorView(APIView):
             )
         try:
             if Author.objects.filter(name = request.data.get("name")).exists():
+                # Trước đây không set status -> mặc định trả 200 OK cho
+                # một lỗi, khiến client tưởng tạo tác giả thành công.
                 return Response({
                     "Error" :  "Tên tác giả bị trùng!",
-                })
+                }, status=status.HTTP_400_BAD_REQUEST)
             
             serializer.save()
             return Response(
@@ -110,17 +112,26 @@ class AuthorView(APIView):
         id = request.data.get("id")
         try:
             author = Author.objects.get(id=id)
-            serializer = AuthorSerializer(author, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(
-                    {"message": "Cập nhật thành công", "author": serializer.data},
-                    status=status.HTTP_200_OK,
-            )
         except Author.DoesNotExist:
             return Response(
                 {"error": "Tác giả không tồn tại!"}, status=status.HTTP_404_NOT_FOUND
             )
+
+        serializer = AuthorSerializer(author, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Cập nhật thành công", "author": serializer.data},
+                status=status.HTTP_200_OK,
+            )
+
+        # Thiếu nhánh else trước đây: nếu serializer invalid, phải trả lỗi
+        # 400 thay vì để hàm không return gì (crash "did not return an
+        # HttpResponse").
+        return Response(
+            {"error": "Dữ liệu không hợp lệ.", "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     def delete(self, request):
         if request.user.role not in ["admin", "libby"]:
