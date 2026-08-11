@@ -1,5 +1,5 @@
 from django.urls import path
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from api.view.account import Account, UserView
 from api.view.author import AuthorView
@@ -7,10 +7,10 @@ from api.view.book import BookView
 from api.view.borrow import BorrowView
 from api.view.category import CategoryView
 from api.view.dashboard import DashboardView
-from api.view.login import LoginCheck
+from api.view.login import LockoutTokenObtainPairView, LoginCheck
 
 urlpatterns = [
-    path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_view"),
+    path("api/token/", LockoutTokenObtainPairView.as_view(), name="token_obtain_view"),
     path("api/token/refresh", TokenRefreshView.as_view(), name="token_refresh_view"),
     path("api/check_login/", LoginCheck.as_view(), name="check_login"),
     # path("api/register/", RegisterView.as_view(), name="api_register"),

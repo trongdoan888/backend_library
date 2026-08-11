@@ -34,11 +34,10 @@ class BorrowSerializer(serializers.ModelSerializer):
             'borrow_status',
             'fine_amount'
         ]  
-        read_only_fields: ClassVar[tuple] = ('id', 'borrow_date')
+        # payment_date và fine_amount được BorrowView tự động tính toán dựa
+        # trên due_date/ngày trả thực tế, client không được set trực tiếp.
+        read_only_fields: ClassVar[tuple] = ('id', 'borrow_date', 'payment_date', 'fine_amount')
         extra_kwargs: ClassVar[dict] = {
-            # Model Borrow.due_date không có null=True, nên KHÔNG được set
-            # allow_null=True ở đây - nếu không, PUT gửi due_date=null sẽ
-            # pass validate nhưng crash IntegrityError khi lưu xuống DB.
             'due_date': {'required': False},
             'borrow_status': {'required': False},
         }

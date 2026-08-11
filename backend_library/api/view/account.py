@@ -130,6 +130,12 @@ class UserView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if "is_active" in request.data and request.user.role == "libby" and user.role == "admin":
+            return Response(
+                {"error": "Libby không có quyền khóa/mở khóa tài khoản Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         serializer = UserSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -140,10 +146,6 @@ class UserView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
-
-        # Trường hợp trước đây bị thiếu: nếu serializer invalid, hàm phải
-        # trả về response lỗi. Nếu không, hàm "rơi" ra khỏi try mà không có
-        # return nào -> Django báo lỗi "view did not return an HttpResponse".
         return Response(
             {"error": "Dữ liệu không hợp lệ.", "errors": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST,

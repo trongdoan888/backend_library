@@ -6,6 +6,7 @@ from django.contrib.auth.models import (
     PermissionsMixin,
 )
 from django.db import models
+from django.utils import timezone
 
 
 # 1. Định nghĩa Custom Manager dành cho AbstractBaseUser
@@ -59,6 +60,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(max_length=100, default="Unknown", blank=True)
 
     is_active = models.BooleanField(default=True)
+
+    failed_login_attempts = models.PositiveIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
 
     objects = CustomUserManager()
 
@@ -144,6 +148,52 @@ class Borrow(models.Model):
         decimal_places=2,
         default=0
     )
+
+    FINE_PER_DAY = 10000  # Tiền phạt mỗi ngày trễ hạn (VND)
+
+    def calculate_fine(self, reference_date=None):
+        """Tính tiền phạt dựa trên số ngày trễ so với due_date.
+
+        reference_date mặc định là payment_date (nếu đã trả) hoặc ngày hiện
+        tại (nếu sách vẫn đang được mượn) để phản ánh đúng số tiền phạt đang
+        phát sinh tại thời điểm tính.
+        """
+        reference_date = reference_date or self.payment_date or timezone.now().date()
+
+        if self.due_date and reference_date > self.due_date:
+            days_late = (reference_date - self.due_date).days
+            return days_late * self.FINE_PER_DAY
+
+        return 0
+
+    def sync_overdue_status(self):
+        """Tự động cập nhật borrow_status sang 'overdue' và tính lại
+        fine_amount nếu đã quá due_date mà vẫn chưa trả sách.
+
+        Không tác động tới các phiếu đã 'returned'. Trả về True nếu
+        borrow_status hoặc fine_amount có thay đổi (chưa lưu vào DB).
+        """
+        if self.borrow_status == "returned":
+            return False
+
+        today = timezone.now().date()
+        new_status = "overdue" if self.due_date and today > self.due_date else "borrowed"
+        new_fine = self.calculate_fine(reference_date=today)
+
+        changed = new_status != self.borrow_status or new_fine != self.fine_amount
+        self.borrow_status = new_status
+        self.fine_amount = new_fine
+        return changed
+
+    @classmethod
+    def sync_all_overdue(cls):
+        """Quét toàn bộ phiếu mượn chưa trả và tự động chuyển sang 'overdue'
+        kèm tính lại tiền phạt nếu đã quá hạn trả sách."""
+        borrows = list(cls.objects.exclude(borrow_status="returned"))
+        changed_borrows = [borrow for borrow in borrows if borrow.sync_overdue_status()]
+
+        if changed_borrows:
+            cls.objects.bulk_update(changed_borrows, ["borrow_status", "fine_amount"])
 
     def __str__(self):
         return str(self.id)

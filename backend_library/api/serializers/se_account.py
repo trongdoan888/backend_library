@@ -16,20 +16,17 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'password', 'email', 'phone', 'role', 'name']  # noqa: RUF012
+        fields = ['id', 'username', 'password', 'email', 'phone', 'role', 'name', 'is_active']  # noqa: RUF012
         read_only_fields: ClassVar[tuple] = ('id',)
         extra_kwargs: ClassVar[dict] = {
             'phone': {'required': False, 'allow_blank': True},
             'name': {'required': False, 'allow_blank': True},
             'email': {'required': False, 'allow_blank': True},
             'role': {'required': False},
+            'is_active': {'required': False},
         }
 
     def create(self, validated_data):
-        # BẮT BUỘC override create(): ModelSerializer.create() mặc định gọi
-        # User.objects.create(**validated_data), tức lưu thẳng password ở
-        # dạng plain text (không hash). Phải dùng create_user() của
-        # CustomUserManager để password được hash bằng set_password().
         password = validated_data.pop('password', None)
         username = validated_data.pop('username')
 

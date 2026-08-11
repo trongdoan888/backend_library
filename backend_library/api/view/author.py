@@ -87,8 +87,6 @@ class AuthorView(APIView):
             )
         try:
             if Author.objects.filter(name = request.data.get("name")).exists():
-                # Trước đây không set status -> mặc định trả 200 OK cho
-                # một lỗi, khiến client tưởng tạo tác giả thành công.
                 return Response({
                     "Error" :  "Tên tác giả bị trùng!",
                 }, status=status.HTTP_400_BAD_REQUEST)
@@ -125,9 +123,6 @@ class AuthorView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        # Thiếu nhánh else trước đây: nếu serializer invalid, phải trả lỗi
-        # 400 thay vì để hàm không return gì (crash "did not return an
-        # HttpResponse").
         return Response(
             {"error": "Dữ liệu không hợp lệ.", "errors": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST,

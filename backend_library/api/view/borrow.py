@@ -1,7 +1,6 @@
 from collections import defaultdict
 from datetime import datetime
 from math import ceil
-from django.utils import timezone
 
 from api.models import Borrow, BorrowBook
 from api.serializers.se_borrow import (
@@ -10,6 +9,7 @@ from api.serializers.se_borrow import (
 )
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -26,6 +26,10 @@ class BorrowView(APIView):
     # =========================== GET ===========================
 
     def get(self, request):
+        # Tự động chuyển các phiếu mượn đã quá due_date sang "overdue"
+        # và cập nhật lại tiền phạt trước khi trả dữ liệu cho client.
+        Borrow.sync_all_overdue()
+
         id = request.GET.get("id")
         page = int(request.GET.get("page", 1))
         limit = int(request.GET.get("limit", 10))
@@ -89,15 +93,6 @@ class BorrowView(APIView):
             with transaction.atomic():
                 # Lấy danh sách sách cần mượn
                 books_data = serializer.validated_data["books"]
-
-                # ==================================================
-                # KIỂM TRA SỐ LƯỢNG SÁCH
-                # ==================================================
-
-                # Cộng gộp số lượng theo từng sách trước khi so sánh với
-                # số lượng còn lại. Nếu không gộp, client có thể gửi trùng
-                # 1 book_id nhiều lần (mỗi lần số lượng nhỏ) để lách qua
-                # điều kiện kiểm tra và mượn vượt số lượng thực tế còn lại.
                 requested_quantity_by_book = defaultdict(int)
                 for item in books_data:
                     requested_quantity_by_book[item["book"]] += item["book_quantity"]
@@ -119,15 +114,8 @@ class BorrowView(APIView):
                             status=status.HTTP_400_BAD_REQUEST,
                         )
 
-                # ==================================================
-                # TẠO PHIẾU MƯỢN
-                # ==================================================
-
                 borrow = serializer.save()
 
-                # ==================================================
-                # CẬP NHẬT total_borrowed
-                # ==================================================
 
                 borrow_books = BorrowBook.objects.filter(borrow=borrow).select_related(
                     "book"
@@ -180,9 +168,12 @@ class BorrowView(APIView):
 
         borrow = get_object_or_404(Borrow, id=borrow_id)
 
-        # Lưu lại trạng thái cũ trước khi update để biết đây có phải là
-        # lần đầu phiếu mượn được chuyển sang "returned" hay không.
+        # Cập nhật trạng thái quá hạn theo ngày hiện tại trước khi áp dụng
+        # thay đổi từ client, để previous_status phản ánh đúng thực tế.
+        borrow.sync_overdue_status()
+
         previous_status = borrow.borrow_status
+        requested_status = request.data.get("borrow_status", previous_status)
 
         serializer = BorrowSerializer(
             borrow,
@@ -198,30 +189,19 @@ class BorrowView(APIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        
 
         with transaction.atomic():
             serializer.save()
-            borrow.payment_date = timezone.now().date()
-            borrow.save()
 
-            if borrow.borrow_status == "overdue":
-                # Nếu trả sách trễ hạn, tính tiền phạt
-                if borrow.due_date and borrow.payment_date > borrow.due_date:
-                    days_late = (borrow.payment_date - borrow.due_date).days
-                    fine_per_day = 10000  # Giả sử tiền phạt là 10.000 VND/ngày
-                    borrow.fine_amount = days_late * fine_per_day
-                    borrow.save()
-                else:
-                    borrow.fine_amount = 0
-                    borrow.save()
+            if previous_status != "returned" and requested_status == "returned":
+                # Trả sách: chốt ngày trả thực tế và tự động tính tiền phạt
+                # dựa trên số ngày trễ so với due_date (không phụ thuộc vào
+                # việc borrow_status có từng được set "overdue" hay chưa).
+                borrow.payment_date = timezone.now().date()
+                borrow.borrow_status = "returned"
+                borrow.fine_amount = borrow.calculate_fine(reference_date=borrow.payment_date)
+                borrow.save()
 
-            # Chỉ hoàn trả sách về kho đúng 1 lần: khi trạng thái mới là
-            # "returned" và trạng thái trước đó chưa phải "returned".
-            # Nếu không có điều kiện previous_status, gọi PUT nhiều lần
-            # với borrow_status="returned" sẽ trừ total_borrowed lặp lại
-            # nhiều lần, làm sai lệch số lượng sách còn lại.
-            if previous_status != "returned" and borrow.borrow_status == "returned":
                 borrow_books = BorrowBook.objects.filter(borrow=borrow).select_related(
                     "book"
                 )
@@ -232,6 +212,12 @@ class BorrowView(APIView):
                         0, book.total_borrowed - borrow_book.book_quantity
                     )
                     book.save()
+            elif borrow.borrow_status != "returned":
+                # Chưa trả sách: tự động đồng bộ lại trạng thái quá hạn và
+                # tiền phạt hiện hành theo ngày hôm nay (vd. sau khi client
+                # đổi due_date, hoặc gửi borrow_status không hợp lệ).
+                borrow.sync_overdue_status()
+                borrow.save()
 
         return Response(
             {
@@ -261,10 +247,6 @@ class BorrowView(APIView):
             )
 
         with transaction.atomic():
-            # Nếu phiếu mượn chưa được trả (chưa "returned") mà đã bị xóa,
-            # số sách trong phiếu vẫn đang tính là "đang mượn". Phải cộng
-            # trả lại total_borrowed trước khi xóa, nếu không sách sẽ bị
-            # kẹt vĩnh viễn ở trạng thái "đang mượn" dù phiếu không còn tồn tại.
             if borrow.borrow_status != "returned":
                 borrow_books = BorrowBook.objects.filter(borrow=borrow).select_related(
                     "book"
