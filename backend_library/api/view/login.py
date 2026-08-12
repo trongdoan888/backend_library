@@ -85,22 +85,3 @@ class LoginCheck(APIView):
             'role': role,
         }
         return Response(data)
-
-# class RegisterView(APIView):
-#     permission_classes = [] # Cho phép chưa đăng nhập vẫn gọi được API này
-
-#     def post(self, request):
-#         serializer = RegisterSerializer(data=request.data)
-#         if serializer.is_valid():
-#             user = serializer.save()
-#             return Response({
-#                 "message": "Đăng ký tài khoản thành công!",
-#                 "user": {
-#                     "id": str(user.id), 
-#                     "username": user.username,
-#                     "email": user.email,
-#                     "role": user.role,
-#                 }
-#             }, status=status.HTTP_201_CREATED)
-        
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
