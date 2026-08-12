@@ -11,7 +11,7 @@ concurrency:
 env:
   # Path to the library-app checkout on the VM (contains docker-compose.yml
   # and this repo checked out as the "backend_library" submodule).
-  DEPLOY_PATH: /opt/library-app
+  DEPLOY_PATH: /home/trong/library-app
 
 jobs:
   deploy:
