@@ -213,9 +213,6 @@ class BorrowView(APIView):
                     )
                     book.save()
             elif borrow.borrow_status != "returned":
-                # Chưa trả sách: tự động đồng bộ lại trạng thái quá hạn và
-                # tiền phạt hiện hành theo ngày hôm nay (vd. sau khi client
-                # đổi due_date, hoặc gửi borrow_status không hợp lệ).
                 borrow.sync_overdue_status()
                 borrow.save()
 
