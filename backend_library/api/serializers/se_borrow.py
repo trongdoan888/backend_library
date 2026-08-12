@@ -60,16 +60,9 @@ class BorrowWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Borrow
         fields = ["id","user","books","borrow_date","payment_date","due_date","borrow_status","fine_amount"]  # noqa: RUF012
-
-        # borrow_status phải read-only khi tạo phiếu mượn mới: mọi phiếu mượn
-        # mới đều phải bắt đầu ở trạng thái "borrowed" (default của model).
-        # Nếu không, client có thể tạo phiếu mượn với borrow_status="returned"
-        # ngay từ đầu, bỏ qua luồng nghiệp vụ mượn -> trả sách.
         read_only_fields = ["id","borrow_date","payment_date","fine_amount","borrow_status"]  # noqa: RUF012
 
     def create(self, validated_data):
-        # books là dữ liệu lồng (nested) không thuộc field của model Borrow,
-        # phải tách ra trước khi tạo Borrow rồi mới tạo từng BorrowBook.
         books_data = validated_data.pop("books")
 
         borrow = Borrow.objects.create(
