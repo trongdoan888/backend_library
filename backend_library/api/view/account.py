@@ -130,9 +130,9 @@ class UserView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if "is_active" in request.data and request.user.role == "libby" and user.role == "admin":
+        if "is_active" in request.data and user.role == "admin":
             return Response(
-                {"error": "Libby không có quyền khóa/mở khóa tài khoản Admin."},
+                {"error": "Không thể khóa/mở khóa tài khoản Admin."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 

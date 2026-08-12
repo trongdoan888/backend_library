@@ -152,12 +152,6 @@ class Borrow(models.Model):
     FINE_PER_DAY = 10000  # Tiền phạt mỗi ngày trễ hạn (VND)
 
     def calculate_fine(self, reference_date=None):
-        """Tính tiền phạt dựa trên số ngày trễ so với due_date.
-
-        reference_date mặc định là payment_date (nếu đã trả) hoặc ngày hiện
-        tại (nếu sách vẫn đang được mượn) để phản ánh đúng số tiền phạt đang
-        phát sinh tại thời điểm tính.
-        """
         reference_date = reference_date or self.payment_date or timezone.now().date()
 
         if self.due_date and reference_date > self.due_date:
@@ -167,12 +161,6 @@ class Borrow(models.Model):
         return 0
 
     def sync_overdue_status(self):
-        """Tự động cập nhật borrow_status sang 'overdue' và tính lại
-        fine_amount nếu đã quá due_date mà vẫn chưa trả sách.
-
-        Không tác động tới các phiếu đã 'returned'. Trả về True nếu
-        borrow_status hoặc fine_amount có thay đổi (chưa lưu vào DB).
-        """
         if self.borrow_status == "returned":
             return False
 
@@ -187,8 +175,6 @@ class Borrow(models.Model):
 
     @classmethod
     def sync_all_overdue(cls):
-        """Quét toàn bộ phiếu mượn chưa trả và tự động chuyển sang 'overdue'
-        kèm tính lại tiền phạt nếu đã quá hạn trả sách."""
         borrows = list(cls.objects.exclude(borrow_status="returned"))
         changed_borrows = [borrow for borrow in borrows if borrow.sync_overdue_status()]
 
