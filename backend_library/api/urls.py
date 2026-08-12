@@ -13,7 +13,6 @@ urlpatterns = [
     path("api/token/", LockoutTokenObtainPairView.as_view(), name="token_obtain_view"),
     path("api/token/refresh", TokenRefreshView.as_view(), name="token_refresh_view"),
     path("api/check_login/", LoginCheck.as_view(), name="check_login"),
-    # path("api/register/", RegisterView.as_view(), name="api_register"),
     path("api/account/", Account.as_view(), name="account"),
     path("api/user/", UserView.as_view(), name="user"),
     path("api/book/", BookView.as_view(), name="book"),
