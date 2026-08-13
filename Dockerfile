@@ -8,7 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Uninstall pip/setuptools after installing deps: neither is needed at
+# runtime (see entrypoint.sh), and removing them clears the vendored-msgpack
+# and setuptools path-traversal CVEs the trivy-image CI job flags.
+RUN pip install --no-cache-dir -r requirements.txt && \
+	pip uninstall -y pip setuptools
 
 COPY backend_library/ .
 
