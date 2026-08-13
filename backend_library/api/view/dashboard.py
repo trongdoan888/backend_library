@@ -21,14 +21,11 @@ class DashboardView(APIView):
             )
 
         try:
-            # Đồng bộ trạng thái quá hạn trước khi thống kê để total_overdue
-            # phản ánh đúng thực tế thay vì chỉ dựa vào giá trị lưu sẵn.
             Borrow.sync_all_overdue()
 
             total_books = Book.objects.count()
             total_book_quantity = Book.objects.aggregate(total=Sum("total"))["total"] or 0
             total_users = User.objects.count()
-            # Số lượng sách (bản) đang được mượn, không phải số phiếu mượn
             total_borrowed = Book.objects.aggregate(total=Sum("total_borrowed"))["total"] or 0
             total_overdue = Borrow.objects.filter(borrow_status="overdue").count()
 

@@ -26,8 +26,6 @@ class BorrowView(APIView):
     # =========================== GET ===========================
 
     def get(self, request):
-        # Tự động chuyển các phiếu mượn đã quá due_date sang "overdue"
-        # và cập nhật lại tiền phạt trước khi trả dữ liệu cho client.
         Borrow.sync_all_overdue()
 
         id = request.GET.get("id")
@@ -168,8 +166,6 @@ class BorrowView(APIView):
 
         borrow = get_object_or_404(Borrow, id=borrow_id)
 
-        # Cập nhật trạng thái quá hạn theo ngày hiện tại trước khi áp dụng
-        # thay đổi từ client, để previous_status phản ánh đúng thực tế.
         borrow.sync_overdue_status()
 
         previous_status = borrow.borrow_status
@@ -194,9 +190,6 @@ class BorrowView(APIView):
             serializer.save()
 
             if previous_status != "returned" and requested_status == "returned":
-                # Trả sách: chốt ngày trả thực tế và tự động tính tiền phạt
-                # dựa trên số ngày trễ so với due_date (không phụ thuộc vào
-                # việc borrow_status có từng được set "overdue" hay chưa).
                 borrow.payment_date = timezone.now().date()
                 borrow.borrow_status = "returned"
                 borrow.fine_amount = borrow.calculate_fine(reference_date=borrow.payment_date)
