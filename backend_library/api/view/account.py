@@ -169,9 +169,9 @@ class UserView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if request.user.role == "libby" and user.role == "admin":
+        if user.role == "admin":
             return Response(
-                {"error": "Libby không có quyền xóa tài khoản Admin."},
+                {"error": "Không thể xóa tài khoản Admin."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
