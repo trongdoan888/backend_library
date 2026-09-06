@@ -1,15 +1,17 @@
 from math import ceil
 
-from api.models import User
+from api.models import BorrowBook, User
 from api.serializers.se_account import (
     UserSerializer,
 )
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
+
+from api.models import Borrow, BorrowBook, User
 
 
 class Account(APIView):
@@ -174,6 +176,15 @@ class UserView(APIView):
                 {"error": "Không thể xóa tài khoản Admin."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        with transaction.atomic():
+            borrow_list = BorrowBook.objects.filter(borrow__user=user).all()
+            for borrow_book in borrow_list:
+                book = borrow_book.book
+                book.total_borrowed = max(
+                    0, book.total_borrowed - borrow_book.book_quantity
+                )
+                book.save()
 
         user.delete()
         return Response(
