@@ -46,3 +46,31 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: 0
           ignore-unfixed: true
+
+  # Sau khi các scan trên pass: bump con trỏ submodule backend_library trong
+  # repo library-app sang đúng commit vừa push. Đây là bước duy nhất khiến
+  # GitOps agent (reconcile.sh, không còn dùng `--remote`) thấy có thay đổi
+  # để rebuild/deploy — "cái gì đang chạy" luôn khớp đúng 1 commit ghim sẵn
+  # trong library-app, rollback = revert commit bump này ở library-app.
+  bump-library-app:
+    needs: [gitleaks, trivy-fs, trivy-image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout library-app
+        uses: actions/checkout@v4
+        with:
+          repository: trongdoan888/library-app
+          token: ${{ secrets.LIBRARY_APP_PUSH_TOKEN }}
+          fetch-depth: 0
+
+      - name: Bump backend_library pin to ${{ github.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git update-index --cacheinfo 160000,${{ github.sha }},backend_library
+          if git diff --cached --quiet; then
+            echo "library-app already pinned to ${{ github.sha }}, nothing to do"
+          else
+            git commit -m "chore: bump backend_library to ${{ github.sha }}"
+            git push origin main
+          fi
