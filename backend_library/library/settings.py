@@ -62,7 +62,35 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'api.middleware.AccessLogMiddleware',
 ]
+
+# Giai đoạn 1 - Django logging: JSON ra stdout -> Docker json-file driver ->
+# Filebeat -> Elasticsearch (xem api/logging_json.py cho format).
+# Access/Audit/CRUD/Auth logging là Giai đoạn 2, chưa có ở đây.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'json': {'()': 'api.logging_json.JsonFormatter'},
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'json'},
+    },
+    # WARNING mặc định để log của thư viện bên thứ 3 (urllib3, django.db.backends...)
+    # không tràn INFO/DEBUG không cần thiết.
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+    'loggers': {
+        # Logger "Application" dùng chung cho code nghiệp vụ: logging.getLogger("app").
+        'app': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        # Django tự bắn logger này cho mọi response >=400: WARNING (4xx) / ERROR (5xx,
+        # kèm traceback qua exc_info) - đây là nguồn "Errors"/"Exceptions" có sẵn của
+        # framework, không cần middleware riêng để bắt.
+        'django.request': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
+        # Cảnh báo bảo mật có sẵn của Django (CSRF fail, suspicious host header...).
+        'django.security': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
+    },
+}
 
 ROOT_URLCONF = 'library.urls'
 
