@@ -29,7 +29,8 @@ class AccessLogMiddleware:
             "endpoint": request.path,
             "status": response.status_code,
             "duration_ms": duration_ms,
-            "user": current_username(),
+            # "actor", not "user" - see api/audit.py for why.
+            "actor": current_username(),
             "user_id": current_user_id(),
             "ip": request.META.get("REMOTE_ADDR"),
         })

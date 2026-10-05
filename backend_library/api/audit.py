@@ -32,7 +32,9 @@ def log_event(category, action, outcome, **fields):
     """
     logger.info({
         "event": {"category": category, "action": action, "outcome": outcome},
-        "user": current_username(),
+        # "actor", not "user" - ECS reserves `user` as an object (user.name/id/...),
+        # a plain string there gets the whole document rejected by Elasticsearch.
+        "actor": current_username(),
         "user_id": current_user_id(),
         **fields,
     })
