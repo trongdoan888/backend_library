@@ -27,11 +27,14 @@ class AccessLogMiddleware:
             },
             "method": request.method,
             "endpoint": request.path,
+            "uri": request.get_full_path(),
+            "request_id": request.headers.get("X-Request-ID"),
             "status": response.status_code,
             "duration_ms": duration_ms,
             # "actor", not "user" - see api/audit.py for why.
             "actor": current_username(),
             "user_id": current_user_id(),
-            "ip": request.META.get("REMOTE_ADDR"),
+            # Sau nginx, REMOTE_ADDR là IP container nginx; nginx set X-Real-IP = client thật.
+            "ip": request.META.get("HTTP_X_REAL_IP") or request.META.get("REMOTE_ADDR"),
         })
         return response
